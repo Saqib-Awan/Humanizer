@@ -1,4 +1,26 @@
 [theme]
-backgroundColor="#000000"
-secondaryBackgroundColor="#5f21d6"
-textColor="#ffffff"
+primaryColor = "#FF4B4B"
+backgroundColor = "#000000"
+secondaryBackgroundColor = "#0E1117"
+textColor = "#FFFFFF"
+font = "sans serif"
+
+[server]
+enableCORS = false
+enableXsrfProtection = false
+headless = true
+
+[global]
+showWarningOnDirectExecution = false
+
+# THIS IS THE IMPORTANT ONE THAT REMOVES THE SIDEBAR
+[deprecation]
+showPyplotGlobalUse = false
+
+[browser]
+gatherUsageStats = false
+
+# Hide the sidebar completely
+[server]
+sidebarState = "collapsed"   # doesn't fully hide it
+# The real way: use the line below in your main.py instead (see step 2)
