@@ -10,6 +10,80 @@ from nltk.tokenize import sent_tokenize, word_tokenize
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+def show_humanize_page():
+
+    # PAGE TITLE HIDDEN
+    st.markdown("""
+        <style>
+            /* Hide default Streamlit top menu and footer */
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+            header {visibility: hidden;}
+
+            /* Clean white interface like naturalwriter.com */
+            .main-container {
+                padding: 0px 40px;
+            }
+
+            .title {
+                font-size: 38px;
+                font-weight: 700;
+                color: #1a1a1a;
+                text-align: center;
+                margin-bottom: 10px;
+            }
+
+            .subtitle {
+                text-align: center;
+                color: #555;
+                font-size: 18px;
+                margin-bottom: 30px;
+            }
+
+            textarea {
+                font-size: 18px !important;
+                line-height: 1.5;
+            }
+
+            .output-box {
+                background: #ffffff;
+                padding: 20px;
+                border-radius: 15px;
+                border: 1px solid #e0e0e0;
+                min-height: 350px;
+            }
+
+            .button-style button {
+                border-radius: 8px !important;
+                font-size: 18px !important;
+                padding: 10px 20px !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # TITLE
+    st.markdown("<h1 class='title'>AI Humanizer</h1>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle'>Make AI-generated text sound 100% human.</p>", unsafe_allow_html=True)
+
+    # LAYOUT LIKE NATURALWRITER
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        input_text = st.text_area("", height=350, placeholder="Paste your AI text here...")
+
+        if st.button("Humanize Text", key="humanize_btn"):
+            if input_text.strip():
+                st.session_state["result"] = "⏳ Processing..."
+            else:
+                st.warning("Please paste some text first!")
+    
+    with col2:
+        st.markdown("<div class='output-box'>", unsafe_allow_html=True)
+
+        st.write(st.session_state.get("result", "Your humanized text will appear here..."))
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
 ########################################
 # Download needed NLTK resources
 ########################################
