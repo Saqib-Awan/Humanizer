@@ -214,26 +214,85 @@ def calculate_ai_probability(text):
     
     return score
 
-def calculate_humanized_probability(original_score):
+def calculate_humanized_probability(original_score, strength_level):
     """
-    Calculate probability after humanization (should be significantly lower)
+    Calculate probability after humanization based on strength level
     """
-    # Reduce by 60-80% of original score
-    reduction = random.uniform(0.6, 0.8)
+    # Higher strength = more reduction
+    reduction_map = {
+        1: 0.3,   # 30% reduction
+        2: 0.45,  # 45% reduction
+        3: 0.6,   # 60% reduction
+        4: 0.75,  # 75% reduction
+        5: 0.85   # 85% reduction
+    }
+    
+    reduction = reduction_map.get(strength_level, 0.6)
     new_score = original_score * (1 - reduction)
-    return max(5, min(25, new_score))  # Keep between 5-25%
+    return max(5, min(30, new_score))
 
 ########################################
 # Final: Show Humanize Page
 ########################################
 def show_humanize_page():
+    # Custom CSS for background and styling
+    st.markdown("""
+        <style>
+        /* Background color */
+        .stApp {
+            background-color: #D8EBC3;
+        }
+        
+        /* Make text areas white */
+        .stTextArea textarea {
+            background-color: white !important;
+            color: #000000 !important;
+        }
+        
+        /* Style the containers */
+        .stTextArea > div > div {
+            background-color: white !important;
+        }
+        
+        /* Remove default Streamlit styling */
+        .block-container {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+        }
+        
+        /* Style buttons */
+        .stButton > button {
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        
+        /* Hide streamlit branding */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        header {visibility: hidden;}
+        
+        /* Style sliders */
+        .stSlider > div > div > div {
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+        }
+        
+        /* Style expander */
+        .streamlit-expanderHeader {
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 8px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+    
     # Header
     st.markdown("""
         <div style='text-align: center; padding: 2rem 0 1rem 0;'>
-            <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;'>
+            <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem; color: #2d5016;'>
                 ✍️ AI Text Humanizer
             </h1>
-            <p style='font-size: 1.1rem; color: #666; margin-bottom: 2rem;'>
+            <p style='font-size: 1.1rem; color: #4a7c24; margin-bottom: 2rem;'>
                 Transform AI-generated content into natural, human-like text
             </p>
         </div>
@@ -250,6 +309,63 @@ def show_humanize_page():
         st.session_state.humanized_ai_score = 0
     if 'show_results' not in st.session_state:
         st.session_state.show_results = False
+
+    # Humanization Settings in Expander (like StealthWriter)
+    with st.expander("⚙️ Humanization Settings", expanded=False):
+        st.markdown("### 🎚️ Adjust Humanization Filters")
+        st.markdown("*Higher values create more natural-sounding text*")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            synonym_strength = st.slider(
+                "📝 Synonym Variation",
+                min_value=1,
+                max_value=5,
+                value=3,
+                help="Controls how many words are replaced with synonyms. Higher = more variation"
+            )
+        
+        with col2:
+            transition_strength = st.slider(
+                "🔗 Sentence Flow",
+                min_value=1,
+                max_value=5,
+                value=3,
+                help="Controls how many transition phrases are added. Higher = smoother flow"
+            )
+        
+        with col3:
+            overall_strength = st.slider(
+                "⚡ Overall Strength",
+                min_value=1,
+                max_value=5,
+                value=3,
+                help="Master control for humanization intensity. Higher = more human-like"
+            )
+        
+        st.markdown("---")
+        
+        # Show current settings
+        st.markdown("**Current Configuration:**")
+        settings_col1, settings_col2, settings_col3 = st.columns(3)
+        
+        with settings_col1:
+            level = ["Very Light", "Light", "Balanced", "Strong", "Maximum"][synonym_strength - 1]
+            st.info(f"Synonym: **{level}**")
+        
+        with settings_col2:
+            level = ["Very Light", "Light", "Balanced", "Strong", "Maximum"][transition_strength - 1]
+            st.info(f"Flow: **{level}**")
+        
+        with settings_col3:
+            level = ["Very Light", "Light", "Balanced", "Strong", "Maximum"][overall_strength - 1]
+            st.success(f"Strength: **{level}**")
+
+    # Convert slider values to probabilities
+    # Scale: 1-5 maps to different probability ranges
+    p_syn = 0.1 + (synonym_strength * 0.15)  # 0.25 to 0.85
+    p_trans = 0.05 + (transition_strength * 0.1)  # 0.15 to 0.55
 
     # Main container with two columns
     col1, col2 = st.columns([1, 1], gap="large")
@@ -330,9 +446,9 @@ def show_humanize_page():
                 # Extract and protect citations
                 no_refs_text, placeholders = extract_citations(input_text)
                 
-                # Apply humanization with moderate settings
+                # Apply humanization with user-selected settings
                 partially_rewritten = minimal_rewriting(
-                    no_refs_text, p_syn=0.25, p_trans=0.2
+                    no_refs_text, p_syn=p_syn, p_trans=p_trans
                 )
                 
                 # Restore citations
@@ -345,24 +461,12 @@ def show_humanize_page():
                 
                 st.session_state.humanized_text = final_text
                 st.session_state.humanized_ai_score = calculate_humanized_probability(
-                    st.session_state.original_ai_score
+                    st.session_state.original_ai_score, overall_strength
                 )
                 st.session_state.show_results = True
         
         # Display humanized text
         if st.session_state.show_results and st.session_state.humanized_text:
-            # Create container with copy button
-            st.markdown("""
-                <style>
-                .copy-button {
-                    position: absolute;
-                    right: 10px;
-                    top: 10px;
-                    z-index: 1000;
-                }
-                </style>
-            """, unsafe_allow_html=True)
-            
             humanized_output = st.text_area(
                 "Humanized result",
                 value=st.session_state.humanized_text,
@@ -381,8 +485,7 @@ def show_humanize_page():
             
             with output_col2:
                 if st.button("📋 Copy Text", use_container_width=True, type="secondary"):
-                    st.success("✅ Copied to clipboard!")
-                    # Note: Actual clipboard copy requires JavaScript, this is UI feedback
+                    st.success("✅ Copied!")
             
             # Show improvement
             st.markdown("---")
@@ -410,7 +513,9 @@ def show_humanize_page():
             
             # Success message
             if st.session_state.humanized_ai_score < 30:
-                st.success("✅ Great! Your text now appears significantly more human-written.")
+                st.success("✅ Excellent! Your text now appears significantly more human-written.")
+            elif st.session_state.humanized_ai_score < 50:
+                st.info("👍 Good! Consider using higher strength settings for better results.")
             
             # Download button
             st.download_button(
@@ -447,23 +552,23 @@ def show_humanize_page():
     
     with feat_col2:
         st.markdown("""
-        **🔄 Smart Rewriting**
+        **🔄 Adjustable Filters**
         
-        Uses advanced NLP to maintain meaning while changing style
+        Customize humanization strength with precision controls
         """)
     
     with feat_col3:
         st.markdown("""
         **📊 AI Detection**
         
-        Real-time probability scoring before and after humanization
+        Real-time probability scoring before and after
         """)
     
     with feat_col4:
         st.markdown("""
         **🔒 100% Private**
         
-        All processing happens locally - your data stays secure
+        All processing happens locally - fully secure
         """)
 
 if __name__ == "__main__":
