@@ -9,7 +9,6 @@ import streamlit as st
 from nltk.corpus import wordnet
 from nltk.tokenize import sent_tokenize, word_tokenize
 import time
-import pyperclip
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -231,17 +230,6 @@ def calculate_humanized_probability(original_score, strength_level):
     reduction = reduction_map.get(strength_level, 0.6)
     new_score = original_score * (1 - reduction)
     return max(5, min(30, new_score))
-
-########################################
-# Copy to Clipboard Function
-########################################
-def copy_to_clipboard(text):
-    """Copy text to clipboard using Streamlit's built-in functionality"""
-    try:
-        st.write(f'<script>navigator.clipboard.writeText(`{text}`);</script>', unsafe_allow_html=True)
-        return True
-    except:
-        return False
 
 ########################################
 # Final: Show Humanize Page
