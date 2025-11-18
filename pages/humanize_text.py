@@ -9,6 +9,7 @@ import streamlit as st
 from nltk.corpus import wordnet
 from nltk.tokenize import sent_tokenize, word_tokenize
 import time
+import pyperclip
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -232,6 +233,17 @@ def calculate_humanized_probability(original_score, strength_level):
     return max(5, min(30, new_score))
 
 ########################################
+# Copy to Clipboard Function
+########################################
+def copy_to_clipboard(text):
+    """Copy text to clipboard using Streamlit's built-in functionality"""
+    try:
+        st.write(f'<script>navigator.clipboard.writeText(`{text}`);</script>', unsafe_allow_html=True)
+        return True
+    except:
+        return False
+
+########################################
 # Final: Show Humanize Page
 ########################################
 def show_humanize_page():
@@ -243,15 +255,47 @@ def show_humanize_page():
             background-color: #D8EBC3;
         }
         
-        /* Make text areas white */
+        /* Make text areas white with black text and visible cursor */
         .stTextArea textarea {
             background-color: white !important;
             color: #000000 !important;
+            caret-color: #000000 !important;
+        }
+        
+        /* Ensure placeholder text is visible */
+        .stTextArea textarea::placeholder {
+            color: #666666 !important;
+            opacity: 0.7 !important;
         }
         
         /* Style the containers */
         .stTextArea > div > div {
             background-color: white !important;
+        }
+        
+        /* Make all text black by default */
+        .stMarkdown, .stMarkdown p, .stMarkdown div, .stMarkdown span,
+        .stCaption, h1, h2, h3, h4, h5, h6, p, div, span, label {
+            color: #000000 !important;
+        }
+        
+        /* Keep specific elements with their original colors */
+        .stButton > button[kind="primary"] {
+            color: white !important;
+        }
+        
+        .stButton > button[kind="secondary"] {
+            color: #000000 !important;
+        }
+        
+        /* Metric values should remain styled */
+        [data-testid="stMetricValue"] {
+            color: inherit !important;
+        }
+        
+        /* Info/Success/Warning boxes text */
+        .stAlert {
+            color: #000000 !important;
         }
         
         /* Remove default Streamlit styling */
@@ -282,6 +326,18 @@ def show_humanize_page():
         .streamlit-expanderHeader {
             background-color: rgba(255, 255, 255, 0.9);
             border-radius: 8px;
+            color: #000000 !important;
+        }
+        
+        /* Ensure labels are black */
+        .stTextArea label, .stSlider label {
+            color: #000000 !important;
+        }
+        
+        /* Cursor blink animation */
+        @keyframes blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
         }
         </style>
     """, unsafe_allow_html=True)
@@ -289,10 +345,10 @@ def show_humanize_page():
     # Header
     st.markdown("""
         <div style='text-align: center; padding: 2rem 0 1rem 0;'>
-            <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem; color: #2d5016;'>
+            <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem; color: #2d5016 !important;'>
                 ✍️ AI Text Humanizer
             </h1>
-            <p style='font-size: 1.1rem; color: #4a7c24; margin-bottom: 2rem;'>
+            <p style='font-size: 1.1rem; color: #4a7c24 !important; margin-bottom: 2rem;'>
                 Transform AI-generated content into natural, human-like text
             </p>
         </div>
@@ -309,6 +365,8 @@ def show_humanize_page():
         st.session_state.humanized_ai_score = 0
     if 'show_results' not in st.session_state:
         st.session_state.show_results = False
+    if 'copy_clicked' not in st.session_state:
+        st.session_state.copy_clicked = False
 
     # Humanization Settings in Expander (like StealthWriter)
     with st.expander("⚙️ Humanization Settings", expanded=False):
@@ -427,7 +485,7 @@ def show_humanize_page():
             st.markdown(f"""
                 <div style='padding: 1rem; background-color: {color}22; border-left: 4px solid {color}; border-radius: 8px;'>
                     <div style='font-size: 2rem; font-weight: 700; color: {color};'>{ai_score:.1f}%</div>
-                    <div style='color: #666; margin-top: 0.5rem;'>{label}</div>
+                    <div style='color: #000000; margin-top: 0.5rem;'>{label}</div>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -484,8 +542,18 @@ def show_humanize_page():
                     st.caption(f"📊 Words: {output_word_count}")
             
             with output_col2:
-                if st.button("📋 Copy Text", use_container_width=True, type="secondary"):
-                    st.success("✅ Copied!")
+                if st.button("📋 Copy Text", use_container_width=True, type="secondary", key="copy_btn"):
+                    st.session_state.copy_clicked = True
+                    # Use Streamlit's clipboard API through components
+                    st.code(st.session_state.humanized_text, language=None)
+                    st.success("✅ Text ready to copy! Select and copy from the box above.")
+                    
+            # Alternative: Show copyable text box when copy is clicked
+            if st.session_state.copy_clicked:
+                st.text_area("Copy from here:", value=st.session_state.humanized_text, height=100, key="copy_area")
+                if st.button("Close", key="close_copy"):
+                    st.session_state.copy_clicked = False
+                    st.rerun()
             
             # Show improvement
             st.markdown("---")
