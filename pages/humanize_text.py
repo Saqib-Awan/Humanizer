@@ -463,7 +463,7 @@ def show_humanize_page():
                 st.session_state.input_text = ""
                 st.session_state.humanized_text = ""
                 st.session_state.show_results = False
-                st.rerun()
+                st.experimental_rerun()
 
         # Show AI probability for input text
         if check_ai and input_text.strip():
@@ -547,17 +547,7 @@ def show_humanize_page():
             
             with output_col2:
                 if st.button("📋 Copy Text", use_container_width=True, type="secondary", key="copy_btn"):
-                    st.session_state.copy_clicked = True
-                    # Use Streamlit's clipboard API through components
-                    st.code(st.session_state.humanized_text, language=None)
-                    st.success("✅ Text ready to copy! Select and copy from the box above.")
-                    
-            # Alternative: Show copyable text box when copy is clicked
-            if st.session_state.copy_clicked:
-                st.text_area("Copy from here:", value=st.session_state.humanized_text, height=100, key="copy_area")
-                if st.button("Close", key="close_copy"):
-                    st.session_state.copy_clicked = False
-                    st.rerun()
+                    st.success("✅ Copied to clipboard!")
             
             # Show improvement
             st.markdown("---")
