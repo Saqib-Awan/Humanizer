@@ -459,11 +459,12 @@ def show_humanize_page():
             humanize = st.button("✨ Humanize Text", use_container_width=True, type="primary")
         
         with btn_col3:
-            if st.button("🗑️ Clear", use_container_width=True, type="secondary"):
+            if st.button("🗑️ Clear", use_container_width=True, type="secondary", key="clear_btn"):
                 st.session_state.input_text = ""
                 st.session_state.humanized_text = ""
                 st.session_state.show_results = False
-                st.experimental_rerun()
+                st.session_state.original_ai_score = 0
+                st.session_state.humanized_ai_score = 0
 
         # Show AI probability for input text
         if check_ai and input_text.strip():
@@ -544,10 +545,6 @@ def show_humanize_page():
                 if st.session_state.humanized_text:
                     output_word_count = count_words(st.session_state.humanized_text)
                     st.caption(f"📊 Words: {output_word_count}")
-            
-            with output_col2:
-                if st.button("📋 Copy Text", use_container_width=True, type="secondary", key="copy_btn"):
-                    st.success("✅ Copied to clipboard!")
             
             # Show improvement
             st.markdown("---")
