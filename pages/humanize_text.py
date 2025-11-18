@@ -329,6 +329,20 @@ def show_humanize_page():
             0%, 49% { opacity: 1; }
             50%, 100% { opacity: 0; }
         }
+        
+        /* Force all button text to white */
+        .stButton button p {
+            color: white !important;
+        }
+
+        .stButton button {
+            color: white !important;
+        }
+
+        div[data-testid="stButton"] button {
+            color: white !important;
+        }       
+        
         </style>
     """, unsafe_allow_html=True)
     
