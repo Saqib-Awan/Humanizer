@@ -1,13 +1,4 @@
-# .streamlit/config.toml   ← ONLY THIS FILE, exact content below
-
 [theme]
-base = "dark"
-backgroundColor = "#000000"
-secondaryBackgroundColor = "#111111"
-textColor = "#FFFFFF"
-font = "sans serif"
-
-[server]
-enableCORS = false
-enableXsrfProtection = false
-headless = true
+backgroundColor="#000000"
+secondaryBackgroundColor="#5f21d6"
+textColor="#ffffff"
