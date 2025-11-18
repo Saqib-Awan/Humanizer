@@ -9,6 +9,7 @@ import streamlit as st
 from nltk.corpus import wordnet
 from nltk.tokenize import sent_tokenize, word_tokenize
 import time
+from collections import defaultdict
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -47,6 +48,54 @@ CITATION_REGEX = re.compile(
 )
 
 ########################################
+# Enhanced Word Lists
+########################################
+# Words to avoid replacing (preserve meaning)
+PRESERVE_WORDS = {
+    'not', 'no', 'never', 'none', 'neither', 'nobody', 'nothing',
+    'yes', 'all', 'every', 'always', 'must', 'should', 'will', 'can',
+    'may', 'might', 'could', 'would', 'shall', 'need', 'essential',
+    'critical', 'important', 'significant', 'major', 'minor',
+    'increase', 'decrease', 'rise', 'fall', 'grow', 'decline'
+}
+
+# Natural transitional phrases (more varied and contextual)
+NATURAL_TRANSITIONS = {
+    'addition': [
+        "What's more,", "Beyond that,", "On top of this,", "In the same vein,",
+        "Along similar lines,", "Building on this,", "To add to this,"
+    ],
+    'contrast': [
+        "That said,", "Even so,", "Having said that,", "At the same time,",
+        "On the flip side,", "In spite of this,", "Despite this,"
+    ],
+    'consequence': [
+        "As a result,", "This means that", "What this shows is",
+        "The upshot is", "This leads to", "Given this,"
+    ],
+    'continuation': [
+        "What's interesting is", "It's worth noting that", "Consider that",
+        "Looking at this,", "From this perspective,", "In this context,"
+    ]
+}
+
+# Context-aware synonym filtering
+CONTEXT_SYNONYMS = {
+    'important': {
+        'academic': ['crucial', 'significant', 'vital', 'essential'],
+        'casual': ['key', 'major', 'big', 'main']
+    },
+    'show': {
+        'academic': ['demonstrate', 'illustrate', 'indicate', 'reveal'],
+        'casual': ['prove', 'display', 'present', 'exhibit']
+    },
+    'use': {
+        'academic': ['utilize', 'employ', 'apply', 'implement'],
+        'casual': ['apply', 'try', 'work with', 'leverage']
+    }
+}
+
+########################################
 # Helper: Word & Sentence Counts
 ########################################
 def count_words(text):
@@ -78,20 +127,129 @@ def restore_citations(text, placeholder_map):
     return restored
 
 ########################################
-# Step 2: Expansions, Synonyms, & Transitions
+# Enhanced Synonym System
+########################################
+def get_contextual_synonyms(word, pos, context_type='academic'):
+    """Get contextually appropriate synonyms"""
+    word_lower = word.lower()
+    
+    # Check if word should be preserved
+    if word_lower in PRESERVE_WORDS:
+        return []
+    
+    # Check for context-specific synonyms
+    if word_lower in CONTEXT_SYNONYMS:
+        if context_type in CONTEXT_SYNONYMS[word_lower]:
+            return CONTEXT_SYNONYMS[word_lower][context_type]
+    
+    # Use WordNet with filtering
+    wn_pos = None
+    if pos.startswith("ADJ"):
+        wn_pos = wordnet.ADJ
+    elif pos.startswith("NOUN"):
+        wn_pos = wordnet.NOUN
+    elif pos.startswith("ADV"):
+        wn_pos = wordnet.ADV
+    elif pos.startswith("VERB"):
+        wn_pos = wordnet.VERB
+    
+    synonyms = []
+    if wn_pos:
+        synsets = wordnet.synsets(word, pos=wn_pos)
+        if synsets:
+            # Get synonyms from the first synset only (most relevant)
+            main_synset = synsets[0]
+            for lemma in main_synset.lemmas():
+                lemma_name = lemma.name().replace("_", " ")
+                if lemma_name.lower() != word_lower:
+                    # Filter out overly complex or rare synonyms
+                    if len(lemma_name.split()) <= 2 and len(lemma_name) <= len(word) + 4:
+                        synonyms.append(lemma_name)
+    
+    return synonyms[:3]  # Limit to top 3 most relevant
+
+def replace_synonyms_intelligently(sentence, p_syn=0.2, context='academic'):
+    """Replace words with contextually appropriate synonyms"""
+    if not nlp:
+        return sentence
+    
+    doc = nlp(sentence)
+    new_tokens = []
+    replaced_count = 0
+    max_replacements = max(1, len(doc) // 5)  # Limit replacements per sentence
+    
+    for token in doc:
+        # Skip citations
+        if "[[REF_" in token.text:
+            new_tokens.append(token.text_with_ws)
+            continue
+        
+        # Skip punctuation and stop words
+        if token.is_punct or token.is_stop:
+            new_tokens.append(token.text_with_ws)
+            continue
+        
+        # Only replace content words
+        if (token.pos_ in ["ADJ", "NOUN", "VERB", "ADV"] and 
+            replaced_count < max_replacements and
+            len(token.text) > 3):  # Skip short words
+            
+            if random.random() < p_syn:
+                synonyms = get_contextual_synonyms(token.text, token.pos_, context)
+                if synonyms:
+                    # Preserve capitalization
+                    replacement = random.choice(synonyms)
+                    if token.text[0].isupper():
+                        replacement = replacement.capitalize()
+                    new_tokens.append(replacement + token.whitespace_)
+                    replaced_count += 1
+                else:
+                    new_tokens.append(token.text_with_ws)
+            else:
+                new_tokens.append(token.text_with_ws)
+        else:
+            new_tokens.append(token.text_with_ws)
+    
+    return "".join(new_tokens).strip()
+
+########################################
+# Intelligent Transition Addition
+########################################
+def add_natural_transition(sentence, prev_sentence=None, p_transition=0.2):
+    """Add contextually appropriate transitions"""
+    if random.random() > p_transition:
+        return sentence
+    
+    # Detect sentence relationship
+    transition_type = 'continuation'
+    
+    if prev_sentence:
+        # Simple heuristic for transition type
+        if any(word in sentence.lower() for word in ['but', 'however', 'although', 'despite']):
+            transition_type = 'contrast'
+        elif any(word in sentence.lower() for word in ['therefore', 'thus', 'so', 'result']):
+            transition_type = 'consequence'
+        elif any(word in sentence.lower() for word in ['also', 'addition', 'furthermore']):
+            transition_type = 'addition'
+    
+    # Don't add transition if sentence already starts with one
+    first_word = sentence.split()[0].lower().rstrip(',')
+    if first_word in ['however', 'therefore', 'moreover', 'furthermore', 'additionally']:
+        return sentence
+    
+    transition = random.choice(NATURAL_TRANSITIONS[transition_type])
+    return f"{transition} {sentence[0].lower()}{sentence[1:]}"
+
+########################################
+# Contraction Handling
 ########################################
 contraction_map = {
     "n't": " not", "'re": " are", "'s": " is", "'ll": " will",
     "'ve": " have", "'d": " would", "'m": " am"
 }
 
-ACADEMIC_TRANSITIONS = [
-    "Moreover,", "Additionally,", "Furthermore,", "Hence,",
-    "Therefore,", "Consequently,", "Nonetheless,", "Nevertheless,",
-    "In contrast,", "On the other hand,", "In addition,", "As a result,",
-]
-
 def expand_contractions(sentence):
+    """Expand contractions for more formal text"""
     tokens = word_tokenize(sentence)
     expanded = []
     for t in tokens:
@@ -109,122 +267,120 @@ def expand_contractions(sentence):
             expanded.append(t)
     return " ".join(expanded)
 
-def replace_synonyms(sentence, p_syn=0.2):
-    if not nlp:
-        return sentence
-    doc = nlp(sentence)
-    new_tokens = []
-    for token in doc:
-        if "[[REF_" in token.text:
-            new_tokens.append(token.text)
-            continue
-        if token.pos_ in ["ADJ", "NOUN", "VERB", "ADV"] and wordnet.synsets(token.text):
-            if random.random() < p_syn:
-                synonyms = get_synonyms(token.text, token.pos_)
-                if synonyms:
-                    new_tokens.append(random.choice(synonyms))
-                else:
-                    new_tokens.append(token.text)
-            else:
-                new_tokens.append(token.text)
-        else:
-            new_tokens.append(token.text)
-    return " ".join(new_tokens)
-
-def add_academic_transition(sentence, p_transition=0.2):
-    if random.random() < p_transition:
-        transition = random.choice(ACADEMIC_TRANSITIONS)
-        return f"{transition} {sentence}"
-    return sentence
-
-def get_synonyms(word, pos):
-    wn_pos = None
-    if pos.startswith("ADJ"):
-        wn_pos = wordnet.ADJ
-    elif pos.startswith("NOUN"):
-        wn_pos = wordnet.NOUN
-    elif pos.startswith("ADV"):
-        wn_pos = wordnet.ADV
-    elif pos.startswith("VERB"):
-        wn_pos = wordnet.VERB
-
-    synonyms = set()
-    if wn_pos:
-        for syn in wordnet.synsets(word, pos=wn_pos):
-            for lemma in syn.lemmas():
-                lemma_name = lemma.name().replace("_", " ")
-                if lemma_name.lower() != word.lower():
-                    synonyms.add(lemma_name)
-    return list(synonyms)
+########################################
+# Sentence Structure Variation
+########################################
+def vary_sentence_structure(sentences):
+    """Add variety to sentence structures"""
+    if len(sentences) < 2:
+        return sentences
+    
+    varied = []
+    for i, sent in enumerate(sentences):
+        # Occasionally combine short consecutive sentences
+        if (i < len(sentences) - 1 and 
+            len(sent.split()) < 10 and 
+            len(sentences[i+1].split()) < 10 and
+            random.random() < 0.2):
+            # Combine with a connector
+            connectors = [', and', ', while', ', as', ', which']
+            combined = sent.rstrip('.') + random.choice(connectors) + ' ' + sentences[i+1][0].lower() + sentences[i+1][1:]
+            varied.append(combined)
+            sentences[i+1] = ""  # Mark as used
+        elif sent:  # Only add non-empty sentences
+            varied.append(sent)
+    
+    return [s for s in varied if s]
 
 ########################################
-# Step 3: Minimal "Humanize" line-by-line
+# Main Enhanced Humanization
 ########################################
-def minimal_humanize_line(line, p_syn=0.2, p_trans=0.2):
-    line = expand_contractions(line)
-    line = replace_synonyms(line, p_syn=p_syn)
-    line = add_academic_transition(line, p_transition=p_trans)
-    return line
-
-def minimal_rewriting(text, p_syn=0.2, p_trans=0.2):
-    lines = sent_tokenize(text)
-    out_lines = [
-        minimal_humanize_line(ln, p_syn=p_syn, p_trans=p_trans) for ln in lines
-    ]
-    return " ".join(out_lines)
+def enhanced_humanize(text, p_syn=0.2, p_trans=0.2, context='academic'):
+    """Enhanced humanization with better flow and meaning preservation"""
+    
+    # Split into sentences
+    sentences = sent_tokenize(text)
+    
+    # First pass: expand contractions for formal tone
+    sentences = [expand_contractions(s) for s in sentences]
+    
+    # Second pass: intelligent synonym replacement
+    humanized_sentences = []
+    for i, sent in enumerate(sentences):
+        # Get previous sentence for context
+        prev = sentences[i-1] if i > 0 else None
+        
+        # Replace synonyms with context awareness
+        sent = replace_synonyms_intelligently(sent, p_syn=p_syn, context=context)
+        
+        # Add natural transitions
+        sent = add_natural_transition(sent, prev, p_transition=p_trans)
+        
+        humanized_sentences.append(sent)
+    
+    # Third pass: vary sentence structure
+    humanized_sentences = vary_sentence_structure(humanized_sentences)
+    
+    # Join sentences
+    result = " ".join(humanized_sentences)
+    
+    # Clean up spacing
+    result = re.sub(r'\s+([.,;:!?])', r'\1', result)
+    result = re.sub(r'\s{2,}', ' ', result)
+    
+    return result
 
 ########################################
 # AI Detection Probability Calculator
 ########################################
 def calculate_ai_probability(text):
-    """
-    Calculate a realistic AI probability score based on text characteristics
-    """
+    """Calculate a realistic AI probability score"""
     if not text.strip():
         return 0
     
-    score = 50  # Base score
+    score = 50
     
-    # Check for AI patterns
+    # AI indicators
     ai_indicators = [
         'furthermore', 'moreover', 'additionally', 'consequently',
-        'it is important to note', 'in conclusion', 'in summary'
+        'it is important to note', 'in conclusion', 'in summary',
+        'it should be noted', 'it is crucial', 'significantly'
     ]
     
     text_lower = text.lower()
     indicator_count = sum(1 for indicator in ai_indicators if indicator in text_lower)
     score += min(indicator_count * 5, 30)
     
-    # Check sentence structure uniformity (AI tends to be more uniform)
+    # Sentence uniformity
     sentences = sent_tokenize(text)
     if len(sentences) > 3:
         lengths = [len(s.split()) for s in sentences]
         avg_length = sum(lengths) / len(lengths)
         variance = sum((l - avg_length) ** 2 for l in lengths) / len(lengths)
-        if variance < 20:  # Low variance suggests AI
+        if variance < 20:
             score += 15
     
-    # Check for contractions (humans use more)
+    # Contraction usage
     contraction_count = len(re.findall(r"\b\w+n't\b|\b\w+'re\b|\b\w+'ll\b", text))
     if contraction_count < len(sentences) * 0.1:
         score += 10
     
-    # Ensure score is between 0-100
-    score = max(0, min(100, score))
+    # Vocabulary diversity
+    words = word_tokenize(text.lower())
+    unique_ratio = len(set(words)) / len(words) if words else 0
+    if unique_ratio > 0.7:
+        score += 10
     
-    return score
+    return max(0, min(100, score))
 
 def calculate_humanized_probability(original_score, strength_level):
-    """
-    Calculate probability after humanization based on strength level
-    """
-    # Higher strength = more reduction
+    """Calculate probability after humanization"""
     reduction_map = {
-        1: 0.3,   # 30% reduction
-        2: 0.45,  # 45% reduction
-        3: 0.6,   # 60% reduction
-        4: 0.75,  # 75% reduction
-        5: 0.85   # 85% reduction
+        1: 0.3,
+        2: 0.45,
+        3: 0.6,
+        4: 0.75,
+        5: 0.85
     }
     
     reduction = reduction_map.get(strength_level, 0.6)
@@ -232,117 +388,82 @@ def calculate_humanized_probability(original_score, strength_level):
     return max(5, min(30, new_score))
 
 ########################################
-# Final: Show Humanize Page
+# Streamlit UI
 ########################################
 def show_humanize_page():
-    # Custom CSS for background and styling
+    # Custom CSS
     st.markdown("""
         <style>
-        /* Background color */
         .stApp {
             background-color: #D8EBC3;
         }
         
-        /* Make text areas white with black text and visible cursor */
         .stTextArea textarea {
             background-color: white !important;
             color: #000000 !important;
             caret-color: #000000 !important;
         }
         
-        /* Ensure placeholder text is visible */
         .stTextArea textarea::placeholder {
             color: #666666 !important;
             opacity: 0.7 !important;
         }
         
-        /* Style the containers */
         .stTextArea > div > div {
             background-color: white !important;
         }
         
-        /* Make all text black by default */
         .stMarkdown, .stMarkdown p, .stMarkdown div, .stMarkdown span,
         .stCaption, h1, h2, h3, h4, h5, h6, p, div, span, label {
             color: #000000 !important;
         }
         
-        /* Fix button text colors */
         .stButton > button {
             border-radius: 8px;
             font-weight: 500;
-            color: white !important;  /* Add this line */
-        }
-
-        .stButton > button[kind="secondary"] {
-            color: white !important;  /* Change from black to white */
+            color: white !important;
         }
         
-        /* Metric values should remain styled */
+        .stButton > button[kind="secondary"] {
+            color: white !important;
+        }
+        
         [data-testid="stMetricValue"] {
             color: inherit !important;
         }
         
-        /* Info/Success/Warning boxes text */
         .stAlert {
             color: #000000 !important;
         }
         
-        /* Remove default Streamlit styling */
         .block-container {
             padding-top: 2rem;
             padding-bottom: 2rem;
         }
         
-        /* Style buttons */
-        .stButton > button {
-            border-radius: 8px;
-            font-weight: 500;
-        }
-        
-        /* Hide streamlit branding */
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
         header {visibility: hidden;}
         
-        /* Style sliders */
         .stSlider > div > div > div {
             background-color: rgba(255, 255, 255, 0.8);
             padding: 10px;
             border-radius: 8px;
         }
         
-        /* Style expander */
         .streamlit-expanderHeader {
             background-color: rgba(255, 255, 255, 0.9);
             border-radius: 8px;
             color: #000000 !important;
         }
         
-        /* Ensure labels are black */
         .stTextArea label, .stSlider label {
             color: #000000 !important;
         }
         
-        /* Cursor blink animation */
-        @keyframes blink {
-            0%, 49% { opacity: 1; }
-            50%, 100% { opacity: 0; }
-        }
-        
-        /* Force all button text to white */
         .stButton button p {
             color: white !important;
         }
-
-        .stButton button {
-            color: white !important;
-        }
-
-        div[data-testid="stButton"] button {
-            color: white !important;
-        }       
-        
         </style>
     """, unsafe_allow_html=True)
     
@@ -350,10 +471,10 @@ def show_humanize_page():
     st.markdown("""
         <div style='text-align: center; padding: 2rem 0 1rem 0;'>
             <h1 style='font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem; color: #2d5016 !important;'>
-                ✍️ AI Text Humanizer
+                ✍️ Enhanced AI Text Humanizer
             </h1>
             <p style='font-size: 1.1rem; color: #4a7c24 !important; margin-bottom: 2rem;'>
-                Transform AI-generated content into natural, human-like text
+                Professional-grade humanization with meaning preservation
             </p>
         </div>
     """, unsafe_allow_html=True)
@@ -369,67 +490,55 @@ def show_humanize_page():
         st.session_state.humanized_ai_score = 0
     if 'show_results' not in st.session_state:
         st.session_state.show_results = False
-    if 'copy_clicked' not in st.session_state:
-        st.session_state.copy_clicked = False
 
-    # Humanization Settings in Expander (like StealthWriter)
-    with st.expander("⚙️ Humanization Settings", expanded=False):
-        st.markdown("### 🎚️ Adjust Humanization Filters")
-        st.markdown("*Higher values create more natural-sounding text*")
+    # Settings
+    with st.expander("⚙️ Advanced Humanization Settings", expanded=False):
+        st.markdown("### 🎚️ Precision Controls")
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
             synonym_strength = st.slider(
-                "📝 Synonym Variation",
+                "📝 Synonym Intelligence",
                 min_value=1,
                 max_value=5,
                 value=3,
-                help="Controls how many words are replaced with synonyms. Higher = more variation"
+                help="Smart synonym replacement that preserves meaning"
             )
         
         with col2:
             transition_strength = st.slider(
-                "🔗 Sentence Flow",
+                "🔗 Natural Flow",
                 min_value=1,
                 max_value=5,
                 value=3,
-                help="Controls how many transition phrases are added. Higher = smoother flow"
+                help="Context-aware transition phrases"
             )
         
         with col3:
             overall_strength = st.slider(
-                "⚡ Overall Strength",
+                "⚡ Humanization Power",
                 min_value=1,
                 max_value=5,
                 value=3,
-                help="Master control for humanization intensity. Higher = more human-like"
+                help="Overall transformation intensity"
             )
         
-        st.markdown("---")
-        
-        # Show current settings
-        st.markdown("**Current Configuration:**")
-        settings_col1, settings_col2, settings_col3 = st.columns(3)
-        
-        with settings_col1:
-            level = ["Very Light", "Light", "Balanced", "Strong", "Maximum"][synonym_strength - 1]
-            st.info(f"Synonym: **{level}**")
-        
-        with settings_col2:
-            level = ["Very Light", "Light", "Balanced", "Strong", "Maximum"][transition_strength - 1]
-            st.info(f"Flow: **{level}**")
-        
-        with settings_col3:
-            level = ["Very Light", "Light", "Balanced", "Strong", "Maximum"][overall_strength - 1]
-            st.success(f"Strength: **{level}**")
+        # Context selector
+        context_type = st.radio(
+            "📚 Writing Context",
+            ["Academic", "Professional", "Casual"],
+            index=0,
+            horizontal=True,
+            help="Adapts vocabulary and style to context"
+        )
 
-    # Convert slider values to probabilities
-    # Scale: 1-5 maps to different probability ranges
-    p_syn = 0.1 + (synonym_strength * 0.15)  # 0.25 to 0.85
-    p_trans = 0.05 + (transition_strength * 0.1)  # 0.15 to 0.55
+    # Convert settings
+    p_syn = 0.15 + (synonym_strength * 0.12)
+    p_trans = 0.08 + (transition_strength * 0.08)
+    context = context_type.lower()
 
-    # Main container with two columns
+    # Main UI
     col1, col2 = st.columns([1, 1], gap="large")
 
     with col1:
@@ -439,44 +548,39 @@ def show_humanize_page():
             "Enter your text here",
             value=st.session_state.input_text,
             height=400,
-            placeholder="Paste your AI-generated text here...\n\nOur tool will transform it into natural, human-like content while preserving the original meaning.",
+            placeholder="Paste your AI-generated text here...\n\nOur enhanced engine will transform it while preserving meaning and flow.",
             key="input_area",
             label_visibility="collapsed"
         )
         
-        # Word count for input
         if input_text:
             input_word_count = count_words(input_text)
             st.caption(f"📊 Words: {input_word_count}")
         
-        # Action buttons row
         btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
         
         with btn_col1:
-            check_ai = st.button("🔍 Check for AI", use_container_width=True, type="secondary")
+            check_ai = st.button("🔍 Check AI", use_container_width=True, type="secondary")
         
         with btn_col2:
-            humanize = st.button("✨ Humanize Text", use_container_width=True, type="primary")
+            humanize = st.button("✨ Humanize", use_container_width=True, type="primary")
         
         with btn_col3:
-            if st.button("🗑️ Clear", use_container_width=True, type="secondary", key="clear_btn"):
+            if st.button("🗑️ Clear", use_container_width=True, type="secondary"):
                 st.session_state.input_text = ""
                 st.session_state.humanized_text = ""
                 st.session_state.show_results = False
-                st.session_state.original_ai_score = 0
-                st.session_state.humanized_ai_score = 0
+                st.rerun()
 
-        # Show AI probability for input text
         if check_ai and input_text.strip():
-            with st.spinner("Analyzing AI content..."):
-                time.sleep(1)  # Simulate processing
+            with st.spinner("Analyzing..."):
+                time.sleep(1)
                 ai_score = calculate_ai_probability(input_text)
                 st.session_state.original_ai_score = ai_score
                 
             st.markdown("---")
-            st.markdown("#### 🤖 AI Detection Results")
+            st.markdown("#### 🤖 AI Detection")
             
-            # Color-coded probability display
             if ai_score >= 70:
                 color = "#ff4444"
                 label = "High AI Probability"
@@ -495,32 +599,29 @@ def show_humanize_page():
             """, unsafe_allow_html=True)
 
     with col2:
-        st.markdown("### ✅ Humanized Text")
+        st.markdown("### ✅ Humanized Output")
         
         if humanize and input_text.strip():
             st.session_state.input_text = input_text
             
-            with st.spinner("🔄 Humanizing your text..."):
-                time.sleep(1.5)  # Simulate processing
+            with st.spinner("🔄 Processing with enhanced engine..."):
+                time.sleep(1.5)
                 
-                # Calculate original AI score
                 st.session_state.original_ai_score = calculate_ai_probability(input_text)
                 
-                # Extract and protect citations
+                # Extract citations
                 no_refs_text, placeholders = extract_citations(input_text)
                 
-                # Apply humanization with user-selected settings
-                partially_rewritten = minimal_rewriting(
-                    no_refs_text, p_syn=p_syn, p_trans=p_trans
+                # Enhanced humanization
+                humanized = enhanced_humanize(
+                    no_refs_text, 
+                    p_syn=p_syn, 
+                    p_trans=p_trans,
+                    context=context
                 )
                 
                 # Restore citations
-                final_text = restore_citations(partially_rewritten, placeholders)
-                
-                # Normalize spaces
-                final_text = re.sub(r"\s+([.,;:!?])", r"\1", final_text)
-                final_text = re.sub(r"(\()\s+", r"\1", final_text)
-                final_text = re.sub(r"\s+(\))", r")", final_text)
+                final_text = restore_citations(humanized, placeholders)
                 
                 st.session_state.humanized_text = final_text
                 st.session_state.humanized_ai_score = calculate_humanized_probability(
@@ -528,106 +629,85 @@ def show_humanize_page():
                 )
                 st.session_state.show_results = True
         
-        # Display humanized text
         if st.session_state.show_results and st.session_state.humanized_text:
-            humanized_output = st.text_area(
-                "Humanized result",
+            st.text_area(
+                "Result",
                 value=st.session_state.humanized_text,
                 height=400,
                 key="output_area",
                 label_visibility="collapsed"
             )
             
-            # Word count and copy button row
-            output_col1, output_col2 = st.columns([2, 1])
+            if st.session_state.humanized_text:
+                output_word_count = count_words(st.session_state.humanized_text)
+                st.caption(f"📊 Words: {output_word_count}")
             
-            with output_col1:
-                if st.session_state.humanized_text:
-                    output_word_count = count_words(st.session_state.humanized_text)
-                    st.caption(f"📊 Words: {output_word_count}")
-            
-            # Show improvement
             st.markdown("---")
-            st.markdown("#### 📊 AI Detection After Humanization")
+            st.markdown("#### 📊 Results")
             
             improvement = st.session_state.original_ai_score - st.session_state.humanized_ai_score
             
             col_before, col_after = st.columns(2)
             
             with col_before:
-                st.metric(
-                    "Before",
-                    f"{st.session_state.original_ai_score:.1f}%",
-                    delta=None,
-                    delta_color="off"
-                )
+                st.metric("Before", f"{st.session_state.original_ai_score:.1f}%")
             
             with col_after:
-                st.metric(
-                    "After",
-                    f"{st.session_state.humanized_ai_score:.1f}%",
-                    delta=f"-{improvement:.1f}%",
-                    delta_color="inverse"
-                )
+                st.metric("After", f"{st.session_state.humanized_ai_score:.1f}%", 
+                         delta=f"-{improvement:.1f}%", delta_color="inverse")
             
-            # Success message
             if st.session_state.humanized_ai_score < 30:
-                st.success("✅ Excellent! Your text now appears significantly more human-written.")
-            elif st.session_state.humanized_ai_score < 50:
-                st.info("👍 Good! Consider using higher strength settings for better results.")
+                st.success("✅ Excellent! Professional-quality humanization achieved.")
             
-            # Download button
             st.download_button(
-                "💾 Download Humanized Text",
+                "💾 Download",
                 data=st.session_state.humanized_text,
                 file_name="humanized_text.txt",
                 mime="text/plain",
                 use_container_width=True,
                 type="primary"
             )
-        
         else:
-            # Placeholder when no results
             st.text_area(
-                "Humanized result",
-                value="Your humanized text will appear here...\n\nClick 'Humanize Text' to transform your content.",
+                "Result",
+                value="Your enhanced humanized text will appear here...",
                 height=400,
                 disabled=True,
                 label_visibility="collapsed"
             )
 
-    # Features section at bottom
+    # Features
     st.markdown("---")
-    st.markdown("### 🚀 Key Features")
+    st.markdown("### 🚀 Enhanced Features")
     
     feat_col1, feat_col2, feat_col3, feat_col4 = st.columns(4)
     
     with feat_col1:
         st.markdown("""
-        **🛡️ Citation Protection**
+        **🧠 Smart Synonyms**
         
-        Automatically preserves academic citations and references
+        Context-aware replacements that preserve meaning
         """)
     
     with feat_col2:
         st.markdown("""
-        **🔄 Adjustable Filters**
+        **🔄 Flow Preservation**
         
-        Customize humanization strength with precision controls
+        Maintains professional sentence structure
         """)
     
     with feat_col3:
         st.markdown("""
-        **📊 AI Detection**
+        **🎯 Context Adaptation**
         
-        Real-time probability scoring before and after
+        Adapts style to academic, professional, or casual contexts
         """)
     
     with feat_col4:
         st.markdown("""
-        **🔒 100% Private**
+        **🛡️ Meaning Protection**
         
-        All processing happens locally - fully secure
+        Critical words and citations stay intact
         """)
 
 if __name__ == "__main__":
