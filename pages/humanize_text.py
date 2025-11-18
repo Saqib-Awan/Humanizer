@@ -267,13 +267,15 @@ def show_humanize_page():
             color: #000000 !important;
         }
         
-        /* Keep specific elements with their original colors */
-        .stButton > button[kind="primary"] {
-            color: white !important;
+        /* Fix button text colors */
+        .stButton > button {
+            border-radius: 8px;
+            font-weight: 500;
+            color: white !important;  /* Add this line */
         }
-        
+
         .stButton > button[kind="secondary"] {
-            color: #000000 !important;
+            color: white !important;  /* Change from black to white */
         }
         
         /* Metric values should remain styled */
